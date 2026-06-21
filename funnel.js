@@ -5,26 +5,11 @@
 
 // ── CONFIG ──────────────────────────────────
 const CONFIG = {
-  stripeKey: 'pk_live_YOUR_STRIPE_PUBLISHABLE_KEY', // replace
-  fbPixelId:  'YOUR_PIXEL_ID',                       // replace
-  gaId:       'G-YOUR_GA_ID',                        // replace
+  fbPixelId:  'YOUR_PIXEL_ID',   // replace
+  gaId:       'G-YOUR_GA_ID',    // replace
   calendlyUrl:'https://calendly.com/ep_fitness/fitness-assessment-consultation',
   emailCoach: 'epfitness24@gmail.com',
   emailEJ:    'ejukulele@gmail.com',
-
-  // Stripe Price IDs — replace with real ones from your Stripe dashboard
-  prices: {
-    nutrition_basic:    { php: null,  usd: 'price_USD_NUT_BASIC' },
-    nutrition_standard: { php: null,  usd: 'price_USD_NUT_STD'  },
-    nutrition_premium:  { php: null,  usd: 'price_USD_NUT_PREM' },
-    online_basic:       { php: 'price_PHP_ONL_BASIC',  usd: null },
-    online_standard:    { php: 'price_PHP_ONL_STD',    usd: null },
-    online_premium:     { php: 'price_PHP_ONL_PREM',   usd: null },
-    live_10:            { php: 'price_PHP_LIVE_10',    usd: 'price_USD_LIVE_10'  },
-    live_16:            { php: 'price_PHP_LIVE_16',    usd: 'price_USD_LIVE_16'  },
-    live_20:            { php: 'price_PHP_LIVE_20',    usd: 'price_USD_LIVE_20'  },
-    live_30:            { php: 'price_PHP_LIVE_30',    usd: 'price_USD_LIVE_30'  },
-  }
 };
 
 // ── ANALYTICS HELPERS ────────────────────────
@@ -77,24 +62,6 @@ async function submitLead(data, source = 'funnel') {
   } catch(e) { console.log('[EP Fitness] Webhook offline — lead saved locally.'); }
 
   return payload;
-}
-
-// ── STRIPE CHECKOUT ──────────────────────────
-async function redirectToCheckout(priceId, leadData) {
-  if (!priceId) {
-    // No Stripe price configured — fallback to Calendly booking
-    window.open(CONFIG.calendlyUrl, '_blank');
-    return;
-  }
-  const stripe = Stripe(CONFIG.stripeKey);
-  await stripe.redirectToCheckout({
-    lineItems: [{ price: priceId, quantity: 1 }],
-    mode: 'payment',
-    successUrl: window.location.origin + '/thankyou.html?session_id={CHECKOUT_SESSION_ID}',
-    cancelUrl:  window.location.href,
-    customerEmail: leadData?.email || undefined,
-    clientReferenceId: leadData?.name || undefined,
-  });
 }
 
 // ── NAV SCROLL EFFECT ────────────────────────
