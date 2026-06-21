@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Choose Your Plan — EP Fitness</title>
-  <meta name="description" content="Choose your EP Fitness coaching package. Secure checkout via Stripe. Flexible payment options available.">
+  <meta name="description" content="Choose your EP Fitness coaching package. Secure checkout via PayPal. Flexible payment options available.">
   <meta name="robots" content="noindex">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -13,8 +13,9 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <link rel="stylesheet" href="style.css">
 
-  <!-- Stripe.js (load early) -->
-  <script src="https://js.stripe.com/v3/"></script>
+  <!-- PayPal JS SDK — SANDBOX MODE (testing) -->
+  <!-- TO GO LIVE: swap client-id to Live ID below -->
+  <script src="https://www.paypal.com/sdk/js?client-id=AX7CMNatYzZcbVsT9AQVJZqZsb5KeztFkXdfInvdv6BfoLywZ37d2IFD7r981UNnMorPQ1gDgLbmbn9i&currency=PHP&intent=capture&enable-funding=card,venmo" data-sdk-integration-source="button-factory"></script>
 
   <style>
     /* ── PAGE HEADER ── */
@@ -645,17 +646,30 @@
 
             <div class="payment-info">
               <i class="fas fa-lock" style="flex-shrink:0;margin-top:1px;"></i>
-              <span>You'll be redirected to Stripe's secure checkout page to complete your payment.</span>
+              <span>You'll complete payment securely through PayPal. No PayPal account needed — pay with card too.</span>
             </div>
 
-            <button class="stripe-btn" id="checkout-btn" onclick="handleCheckout()">
-              <i class="fab fa-stripe-s"></i>
-              <span id="checkout-btn-text">Pay Securely with Stripe</span>
-              <div class="spinner hidden" id="checkout-spinner"></div>
-            </button>
+            <!-- SANDBOX NOTICE — remove before going live -->
+            <div style="background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.25);border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:.75rem;color:#F59E0B;display:flex;gap:8px;align-items:flex-start;">
+              <i class="fas fa-flask" style="margin-top:2px;flex-shrink:0;"></i>
+              <span><strong>SANDBOX MODE — Testing only.</strong> Use test buyer: <code style="background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:4px;">sb-qajzp51677817@personal.example.com</code> / <code style="background:rgba(0,0,0,0.3);padding:1px 5px;border-radius:4px;">E#Hc,s3.</code></span>
+            </div>
+
+            <!-- PayPal Button renders here -->
+            <div id="paypal-button-container" style="margin-top:4px;min-height:50px;"></div>
+
+            <!-- Fallback if PayPal fails to load -->
+            <div id="paypal-fallback" style="display:none;">
+              <button class="stripe-btn" onclick="handleEmailFallback()" style="background:#0070ba;">
+                <i class="fab fa-paypal"></i>
+                <span>Pay via PayPal (Manual)</span>
+              </button>
+            </div>
 
             <div class="stripe-logos">
-              <span><i class="fas fa-lock" style="color:var(--muted);font-size:.7rem;margin-right:4px;"></i>Secured by Stripe</span>
+              <span><i class="fab fa-paypal" style="color:#0070ba;margin-right:4px;"></i>Secured by PayPal</span>
+              <span style="margin:0 6px;color:var(--border);">·</span>
+              <span><i class="fas fa-lock" style="color:var(--muted);font-size:.7rem;margin-right:4px;"></i>256-bit SSL</span>
             </div>
 
             <div class="guarantee-badge">
@@ -701,21 +715,39 @@
 
 <script src="funnel.js"></script>
 <script>
+  // ════════════════════════════════════════════
+  //  EP FITNESS — PAYPAL CHECKOUT
+  //  Sandbox Client ID: AX7CMNat... (current)
+  //  Live Client ID:    AbLaKh1Y... (go-live)
+  // ════════════════════════════════════════════
+
+  const PAYPAL_CONFIG = {
+    sandbox: {
+      clientId: 'AX7CMNatYzZcbVsT9AQVJZqZsb5KeztFkXdfInvdv6BfoLywZ37d2IFD7r981UNnMorPQ1gDgLbmbn9i',
+      mode: 'sandbox'
+    },
+    live: {
+      clientId: 'AbLaKh1YjpQ_k0VLliW8dN5oU8gSURZGFy-GL2-yxsZ7-3IInbFYWc6bAw-GPA17A-u5ZOOx1080_hei',
+      mode: 'live'
+    },
+    // CHANGE THIS TO 'live' WHEN READY TO GO LIVE
+    current: 'sandbox'
+  };
+
   // ── LOCAL STATE ──
-  let currentPkg = null;
+  let currentPkg    = null;
+  let paypalButtons = null;
 
   // ── SELECT PACKAGE ──
   function selectPkg(cardEl, pkgId, pkgName, currency, phpPrice, usdPrice, validity) {
-    // Deselect all
     document.querySelectorAll('.pkg-card').forEach(c => c.classList.remove('selected'));
     cardEl.classList.add('selected');
 
-    // Determine active currency price
     const displayPrice = activeCurrency === 'USD' && usdPrice ? usdPrice : phpPrice;
     currentPkg = { id: pkgId, name: pkgName, currency: activeCurrency, phpPrice, usdPrice, displayPrice, validity };
     saveToStorage('selected_pkg', currentPkg);
 
-    // Update summary
+    // Update order summary
     document.getElementById('order-empty').style.display = 'none';
     document.getElementById('selected-pkg-display').classList.add('visible');
     document.getElementById('sum-name').textContent = pkgName;
@@ -723,7 +755,10 @@
     document.getElementById('sum-currency').textContent = activeCurrency === 'PHP' ? 'Philippine Peso (₱)' : 'US Dollar ($)';
     document.getElementById('sum-price').textContent = displayPrice;
 
-    // Scroll summary into view on mobile
+    // Re-render PayPal button with new amount
+    renderPayPalButton();
+
+    // Scroll to summary on mobile
     if (window.innerWidth < 1024) {
       document.querySelector('.order-summary').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -737,49 +772,161 @@
     document.querySelectorAll('.pkg-card').forEach(c => c.classList.remove('selected'));
     document.getElementById('order-empty').style.display = 'block';
     document.getElementById('selected-pkg-display').classList.remove('visible');
+    document.getElementById('paypal-button-container').innerHTML = '';
   }
 
-  // ── CHECKOUT ──
-  async function handleCheckout() {
-    if (!currentPkg) { alert('Please select a package first.'); return; }
-
+  // ── VALIDATE BUYER INFO ──
+  function validateBuyerInfo() {
     const name  = document.getElementById('co-name').value.trim();
     const email = document.getElementById('co-email').value.trim();
-
-    if (!name) { document.getElementById('co-name').focus(); return; }
-    if (!validateEmail(email)) { document.getElementById('co-email').focus(); return; }
-
-    const btn  = document.getElementById('checkout-btn');
-    const text = document.getElementById('checkout-btn-text');
-    const spin = document.getElementById('checkout-spinner');
-
-    text.classList.add('hidden'); spin.classList.remove('hidden'); btn.disabled = true;
-
-    // Save lead data
-    const leadData = { name, email, phone: document.getElementById('co-phone').value, package: currentPkg.name, currency: activeCurrency };
-    await submitLead(leadData, 'checkout_page');
-
-    trackEvent('begin_checkout', { package: currentPkg.name });
-
-    // Determine Stripe price ID
-    const priceId = CONFIG.prices[currentPkg.id]?.[activeCurrency.toLowerCase()] || null;
-
-    if (priceId && priceId !== 'price_PHP_ONL_BASIC') {
-      // Real Stripe redirect
-      await redirectToCheckout(priceId, leadData);
-    } else {
-      // Stripe not yet configured — redirect to email fallback
-      setTimeout(() => {
-        const subject = encodeURIComponent(`Package Interest: ${currentPkg.name}`);
-        const body = encodeURIComponent(`Hi Coach Emman,\n\nI'd like to purchase the ${currentPkg.name} package (${currentPkg.displayPrice}).\n\nName: ${name}\nEmail: ${email}\n\nPlease guide me on next steps.\n\nThank you!`);
-        window.location.href = `mailto:epfitness24@gmail.com?subject=${subject}&body=${body}`;
-        text.classList.remove('hidden'); spin.classList.add('hidden'); btn.disabled = false;
-      }, 800);
+    if (!name) {
+      document.getElementById('co-name').focus();
+      document.getElementById('co-name').style.borderColor = 'var(--red)';
+      return false;
     }
+    if (!email || !validateEmail(email)) {
+      document.getElementById('co-email').focus();
+      document.getElementById('co-email').style.borderColor = 'var(--red)';
+      return false;
+    }
+    return true;
   }
 
-  // ── CURRENCY SWITCH OVERRIDE ──
-  // Update order summary price when currency changes
+  // ── RENDER PAYPAL BUTTON ──
+  function renderPayPalButton() {
+    if (!currentPkg) return;
+    if (typeof paypal === 'undefined') {
+      document.getElementById('paypal-fallback').style.display = 'block';
+      return;
+    }
+
+    // Clear previous button
+    document.getElementById('paypal-button-container').innerHTML = '';
+
+    // Parse numeric amount from display price e.g. "₱3,000" → 3000
+    const rawAmount = parseFloat(currentPkg.displayPrice.replace(/[₱$,\s]/g, ''));
+    const currency  = activeCurrency === 'USD' ? 'USD' : 'PHP';
+
+    paypal.Buttons({
+      style: {
+        layout:  'vertical',
+        color:   'gold',
+        shape:   'rect',
+        label:   'pay',
+        height:  48
+      },
+
+      // ── Called when PayPal popup opens ──
+      createOrder: function(data, actions) {
+        // Validate form first
+        if (!validateBuyerInfo()) {
+          return Promise.reject(new Error('Please fill in your name and email first.'));
+        }
+        if (!currentPkg) {
+          return Promise.reject(new Error('No package selected.'));
+        }
+
+        return actions.order.create({
+          purchase_units: [{
+            description: `EP Fitness — ${currentPkg.name}`,
+            amount: {
+              currency_code: currency,
+              value: rawAmount.toFixed(2)
+            },
+            custom_id: currentPkg.id,
+            soft_descriptor: 'EP FITNESS'
+          }],
+          application_context: {
+            brand_name: 'EP Fitness',
+            shipping_preference: 'NO_SHIPPING',
+            user_action: 'PAY_NOW'
+          }
+        });
+      },
+
+      // ── Called when buyer approves payment ──
+      onApprove: async function(data, actions) {
+        // Show loading state
+        document.getElementById('paypal-button-container').innerHTML =
+          '<div style="text-align:center;padding:20px;color:var(--muted);"><div class="spinner" style="margin:0 auto 10px;"></div><p style="font-size:.82rem;">Confirming your payment...</p></div>';
+
+        try {
+          // Capture the payment
+          const order = await actions.order.capture();
+
+          // Save lead + order details
+          const leadData = {
+            name:      document.getElementById('co-name').value.trim(),
+            email:     document.getElementById('co-email').value.trim(),
+            phone:     document.getElementById('co-phone').value,
+            package:   currentPkg.name,
+            currency:  activeCurrency,
+            amount:    currentPkg.displayPrice,
+            paypal_order_id:  order.id,
+            paypal_status:    order.status,
+            paypal_payer_email: order.payer?.email_address || '',
+          };
+
+          await submitLead(leadData, 'paypal_checkout');
+
+          // Track purchase
+          if (typeof fbq !== 'undefined') {
+            fbq('track', 'Purchase', { value: rawAmount, currency: currency });
+          }
+          if (typeof gtag !== 'undefined') {
+            gtag('event', 'purchase', {
+              transaction_id: order.id,
+              value: rawAmount,
+              currency: currency,
+              items: [{ item_name: currentPkg.name, price: rawAmount }]
+            });
+          }
+
+          // Clear selected package from storage before redirect
+          // (thankyou.html reads it for the purchase event)
+          saveToStorage('selected_pkg', { ...currentPkg, paypal_order_id: order.id });
+
+          // Redirect to thank you page
+          window.location.href = 'thankyou.html?order_id=' + order.id + '&status=success';
+
+        } catch (err) {
+          console.error('PayPal capture error:', err);
+          document.getElementById('paypal-button-container').innerHTML = '';
+          renderPayPalButton();
+          alert('Payment could not be completed. Please try again or contact epfitness24@gmail.com');
+        }
+      },
+
+      // ── Buyer cancelled ──
+      onCancel: function(data) {
+        console.log('PayPal payment cancelled by user:', data);
+        // Just re-render button — no redirect needed
+      },
+
+      // ── SDK error ──
+      onError: function(err) {
+        console.error('PayPal SDK error:', err);
+        document.getElementById('paypal-fallback').style.display = 'block';
+        document.getElementById('paypal-button-container').innerHTML =
+          '<p style="font-size:.75rem;color:#f87171;text-align:center;margin-top:8px;">PayPal failed to load. Please use the button above or contact us.</p>';
+      }
+
+    }).render('#paypal-button-container');
+  }
+
+  // ── EMAIL FALLBACK (if PayPal SDK fails) ──
+  function handleEmailFallback() {
+    if (!currentPkg) return;
+    const name  = document.getElementById('co-name').value.trim() || '(not provided)';
+    const email = document.getElementById('co-email').value.trim() || '(not provided)';
+    const subj  = encodeURIComponent(`Package Purchase: ${currentPkg.name}`);
+    const body  = encodeURIComponent(
+      `Hi Coach Emman,\n\nI'd like to purchase:\n\nPackage: ${currentPkg.name}\nPrice: ${currentPkg.displayPrice}\n\nMy details:\nName: ${name}\nEmail: ${email}\n\nPlease send me payment instructions.\n\nThank you!`
+    );
+    window.location.href = `mailto:epfitness24@gmail.com?subject=${subj}&body=${body}`;
+  }
+
+  // ── CURRENCY SWITCH — override to also re-render PayPal button ──
   const _origSwitch = switchCurrency;
   function switchCurrency(cur) {
     _origSwitch(cur);
@@ -789,10 +936,12 @@
       currentPkg.currency = cur;
       document.getElementById('sum-price').textContent = displayPrice;
       document.getElementById('sum-currency').textContent = cur === 'PHP' ? 'Philippine Peso (₱)' : 'US Dollar ($)';
+      // Re-render PayPal button with new currency amount
+      renderPayPalButton();
     }
   }
 
-  // ── PRE-SELECT FROM URL ──
+  // ── PRE-SELECT FROM URL PARAMS ──
   window.addEventListener('DOMContentLoaded', () => {
     const params = new URLSearchParams(window.location.search);
     const pkg = params.get('pkg');
@@ -800,7 +949,12 @@
     if (cur) switchCurrency(cur.toUpperCase());
     if (pkg) {
       const card = document.querySelector(`[data-pkg-id="${pkg}"]`);
-      if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); card.click(); }
+      if (card) {
+        setTimeout(() => {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          card.click();
+        }, 300);
+      }
     }
   });
 </script>
